@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Do Anything Arcade</title>
+  <style>
+    :root { --bg:#111; --fg:#f2f2f2; --accent:#4fd1c5; --danger:#ff5a5a; --ok:#8bd450; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui, sans-serif; }
+    header { padding:18px 20px; border-bottom:1px solid #222; display:flex; align-items:center; gap:14px; }
+    h1 { margin:0; font-size:20px; letter-spacing:.5px; }
+    #tabs { display:flex; gap:8px; }
+    button.tab { background:#1b1b1b; color:var(--fg); border:1px solid #2a2a2a; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    button.tab.active { border-color:var(--accent); box-shadow:0 0 0 2px #1d3a37 inset; }
+    #wrap { display:grid; grid-template-columns: 640px 1fr; gap:18px; padding:18px; }
+    canvas { background:#0f0f0f; border:1px solid #222; border-radius:10px; }
+    .panel { background:#131313; border:1px solid #222; border-radius:10px; padding:12px; }
+    .hud { display:flex; gap:12px; align-items:center; margin-bottom:8px; }
+    .chip { background:#0c0c0c; border:1px solid #1f1f1f; padding:6px 10px; border-radius:999px; }
+    .btn { background:var(--accent); color:#062725; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
+    .btn.red { background:var(--danger); color:#2b0000; }
+    .btn.gray { background:#222; color:#ddd; }
+    .kbd { font-family:monospace; background:#0c0c0c; border:1px solid #1f1f1f; padding:2px 6px; border-radius:6px; }
+    ul { margin:8px 0 0 18px; }
+    li { margin:6px 0; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Do Anything Arcade</h1>
+    <div id="tabs">
+      <button class="tab active" data-game="dodge">Dodge</button>
+      <button class="tab" data-game="snake">Snake</button>
+      <button class="tab" data-game="clicker">Clicker</button>
+    </div>
+    <div style="margin-left:auto;">
+      <button id="resetBtn" class="btn gray">Reset</button>
+    </div>
+  </header>
+
+  <div id="wrap">
+    <canvas id="game" width="640" height="360"></canvas>
+    <div class="panel">
+      <div class="hud">
+        <div id="status" class="chip">Ready</div>
+        <div id="scoreChip" class="chip">Score: 0</div>
+        <div id="bestChip" class="chip">Best: 0</div>
+      </div>
+      <div id="help-dodge">
+        <h3 style="margin:6px 0;">Dodge – outrun falling blocks</h3>
+        <ul>
+          <li><span class="kbd">←</span> <span class="kbd">→</span> move</li>
+          <li><span class="kbd">Space</span> to pause/resume</li>
+          <li>Survive to increase score. Collide = game over.</li>
+        </ul>
+      </div>
+      <div id="help-snake" class="hidden">
+        <h3 style="margin:6px 0;">Snake – eat apples, don’t crash</h3>
+        <ul>
+          <li><span class="kbd">↑</span> <span class="kbd">↓</span> <span class="kbd">←</span> <span class="kbd">→</span> control</li>
+          <li><span class="kbd">Space</span> to pause/resume</li>
+          <li>Each apple = +1 length and +10 score.</li>
+        </ul>
+      </div>
+      <div id="help-clicker" class="hidden">
+        <h3 style="margin:6px 0;">Clicker – chase combos</h3>
+        <ul>
+          <li>Click the target to score. Miss to break combo.</li>
+          <li>Higher combo = more points per hit.</li>
+          <li><span class="kbd">Space</span> to pause/resume</li>
+        </ul>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button id="pauseBtn" class="btn">Pause</button>
+        <button id="playBtn" class="btn">Play</button>
+        <button id="hardBtn" class="btn red">Hard Mode</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const status = document.getElementById("status");
+    const scoreChip = document.getElementById("scoreChip");
+    const bestChip = document.getElementById("bestChip");
+    const resetBtn = document.getElementById("resetBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const playBtn = document.getElementById("playBtn");
+    const hardBtn = document.getElementById("hardBtn");
+    const tabs = [...document.querySelectorAll(".tab")];
+    const helps = {
+      dodge: document.getElementById("help-dodge"),
+      snake: document.getElementById("help-snake"),
+      clicker: document.getElementById("help-clicker"),
+    };
+
+    let gameName = "dodge";
+    let paused = false;
+    let hard = false;
+    let score = 0;
+    const best = { dodge:0, snake:0, clicker:0 };
+
+    function setHUD(s, sc) {
+      status.textContent = s;
+      scoreChip.textContent = "Score: " + Math.floor(sc ?? score);
+      bestChip.textContent = "Best: " + best[gameName];
+    }
+
+    function clear() { ctx.clearRect(0,0,canvas.width,canvas.height); }
+
+    // Input
+    const keys = new Set();
+    document.addEventListener("keydown", (e) => {
+      keys.add(e.key);
+      if (e.key === " ") {
+        paused = !paused;
+        setHUD(paused ? "Paused" : "Playing");
+      }
+    });
+    document.addEventListener("keyup", (e) => keys.delete(e.key));
+    canvas.addEventListener("click", (e) => {
+      if (gameName === "clicker") clickerClick(e);
+    });
+
+    // Tab switch
+    tabs.forEach(t => t.addEventListener("click", () => {
+      tabs.forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      gameName = t.dataset.game;
+      Object.values(helps).forEach(h => h.classList.add("hidden"));
+      helps[gameName].classList.remove("hidden");
+      hard = false;
+      startGame();
+    }));
+
+    pauseBtn.onclick = () => { paused = true; setHUD("Paused"); };
+    playBtn.onclick = () => { paused = false; setHUD("Playing"); };
+    hardBtn.onclick = () => { hard = !hard; hardBtn.textContent = hard ? "Hard Mode: ON" : "Hard Mode"; startGame(); };
+    resetBtn.onclick = () => { best[gameName] = 0; startGame(); };
+
+    // Game state containers
+    let dodge, snake, clicker;
+
+    function startGame() {
+      paused = false;
+      score = 0;
+      setHUD("Playing", 0);
+      if (gameName === "dodge") {
+        dodge = {
+          player: { x: canvas.width/2 - 20, y: canvas.height-50, w:40, h:40, speed:6 },
+          blocks: [],
+          spawn: 0,
+          speed: hard ? 5 : 3
+        };
+      } else if (gameName === "snake") {
+        const grid = 20;
+        snake = {
+          grid,
+          cellsX: Math.floor(canvas.width / grid),
+          cellsY: Math.floor(canvas.height / grid),
+          body: [{x:5, y:5}],
+          dir: {x:1, y:0},
+          apple: {x:12, y:8},
+          tickMs: hard ? 90 : 120,
+          acc: 0
+        };
+      } else if (gameName === "clicker") {
+        clicker = {
+          target: { x: 320, y: 180, r: 24 },
+          vx: 2.5, vy: 1.8,
+          combo: 0,
+          base: hard ? 5 : 10
+        };
+      }
+    }
+
+    // Collision helper
+    function rectHit(ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    // Dodge update/draw
+    function updateDodge(dt) {
+      const p = dodge.player;
+      if (keys.has("ArrowLeft")) p.x -= p.speed;
+      if (keys.has("ArrowRight")) p.x += p.speed;
+      p.x = Math.max(0, Math.min(canvas.width - p.w, p.x));
+
+      dodge.spawn += dt;
+      const spawnEvery = hard ? 400 : 600;
+      if (dodge.spawn > spawnEvery) {
+        dodge.spawn = 0;
+        const w = 30 + Math.random()*40;
+        dodge.blocks.push({ x: Math.random()*(canvas.width - w), y: -w, w, h: w, vy: dodge.speed + Math.random()*2 });
+      }
+
+      dodge.blocks.forEach(b => b.y += b.vy);
+      dodge.blocks = dodge.blocks.filter(b => b.y < canvas.height + 10);
+
+      for (const b of dodge.blocks) {
+        if (rectHit(p.x, p.y, p.w, p.h, b.x, b.y, b.w, b.h)) {
+          gameOver();
+          return;
+        }
+      }
+      score += 0.05;
+    }
+    function drawDodge() {
+      const p = dodge.player;
+      ctx.fillStyle = "#4fd1c5";
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = "#ff5a5a";
+      dodge.blocks.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+    }
+
+    // Snake update/draw
+    function updateSnake(dt) {
+      snake.acc += dt;
+      const step = snake.tickMs;
+      if (snake.acc < step) return;
+
+      snake.acc = 0;
+      // direction
+      if (keys.has("ArrowUp") && snake.dir.y !== 1) snake.dir = {x:0, y:-1};
+      if (keys.has("ArrowDown") && snake.dir.y !== -1) snake.dir = {x:0, y:1};
+      if (keys.has("ArrowLeft") && snake.dir.x !== 1) snake.dir = {x:-1, y:0};
+      if (keys.has("ArrowRight") && snake.dir.x !== -1) snake.dir = {x:1, y:0};
+
+      const head = { x: (snake.body[0].x + snake.dir.x + snake.cellsX) % snake.cellsX,
+                     y: (snake.body[0].y + snake.dir.y + snake.cellsY) % snake.cellsY };
+      // collision with self
+      if (snake.body.some(s => s.x === head.x && s.y === head.y)) {
+        gameOver();
+        return;
+      }
+      snake.body.unshift(head);
+
+      // apple
+      if (head.x === snake.apple.x && head.y === snake.apple.y) {
+        score += 10;
+        placeApple();
+      } else {
+        snake.body.pop();
+      }
+    }
+    function placeApple() {
+      const occupied = new Set(snake.body.map(s => s.x + "," + s.y));
+      let x, y;
+      do {
+        x = Math.floor(Math.random() * snake.cellsX);
+        y = Math.floor(Math.random() * snake.cellsY);
+      } while (occupied.has(x + "," + y));
+      snake.apple = {x, y};
+    }
+    function drawSnake() {
+      const g = snake.grid;
+      ctx.fillStyle = "#8bd450";
+      snake.body.forEach(s => ctx.fillRect(s.x*g, s.y*g, g, g));
+      ctx.fillStyle = "#4fd1c5";
+      ctx.fillRect(snake.apple.x*g, snake.apple.y*g, g, g);
+    }
+
+    // Clicker update/draw
+    function updateClicker(dt) {
+      const t = clicker.target;
+      t.x += clicker.vx;
+      t.y += clicker.vy;
+      // bounce
+      if (t.x - t.r < 0 || t.x + t.r > canvas.width) clicker.vx *= -1;
+      if (t.y - t.r < 0 || t.y + t.r > canvas.height) clicker.vy *= -1;
+
+      // slight speed ramp with combo
+      const speedBoost = Math.min(3, clicker.combo * 0.05);
+      clicker.vx = Math.sign(clicker.vx) * (2.5 + speedBoost);
+      clicker.vy = Math.sign(clicker.vy) * (1.8 + speedBoost);
+    }
+    function drawClicker() {
+      const t = clicker.target;
+      ctx.fillStyle = "#4fd1c5";
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r, 0, Math.PI*2);
+      ctx.fill();
+
+      // crosshair (visual aid)
+      ctx.strokeStyle = "#2a2a2a";
+      ctx.beginPath();
+      ctx.moveTo(t.x - t.r, t.y); ctx.lineTo(t.x + t.r, t.y);
+      ctx.moveTo(t.x, t.y - t.r); ctx.lineTo(t.x, t.y + t.r);
+      ctx.stroke();
+    }
+    function clickerClick(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const t = clicker.target;
+      const dx = mx - t.x, dy = my - t.y;
+      const hit = Math.hypot(dx, dy) <= t.r;
+      if (hit) {
+        clicker.combo++;
+        const gain = clicker.base + Math.floor(clicker.combo * 2);
+        score += gain;
+        setHUD("Combo x" + clicker.combo + " (+" + gain + ")");
+        // shrink to increase difficulty briefly
+        t.r = Math.max(16, 24 - Math.min(8, clicker.combo));
+      } else {
+        clicker.combo = 0;
+        setHUD("Miss — combo reset");
+        t.r = 24;
+      }
+    }
+
+    // Game over
+    function gameOver() {
+      paused = true;
+      score = Math.floor(score);
+      if (score > best[gameName]) best[gameName] = score;
+      setHUD("Game Over", score);
+    }
+
+    // Main loop
+    let last = performance.now();
+    function loop(ts) {
+      const dt = ts - last; last = ts;
+      if (!paused) {
+        clear();
+        // backdrop
+        ctx.fillStyle = "#0b0b0b";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        if (gameName === "dodge") {
+          updateDodge(dt);
+          drawDodge();
+        } else if (gameName === "snake") {
+          updateSnake(dt);
+          drawSnake();
+        } else {
+          updateClicker(dt);
+          drawClicker();
+        }
+
+        // HUD text
+        ctx.fillStyle = "#888";
+        ctx.font = "12px monospace";
+        ctx.fillText("Score: " + Math.floor(score), 10, 18);
+        ctx.fillText("Best: " + best[gameName], 10, 34);
+      }
+      requestAnimationFrame(loop);
+    }
+
+    // Initialize
+    startGame();
+    requestAnimationFrame(loop); vcccccccccccccccccccccccccccccccc      
+  </script> vcccccccccccccccccccccccccccccccc      
+</body> vcccccccccccccccccccccccccccccccc      
+</html> vcccccccccccccccccccccccccccccccc      

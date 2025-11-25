@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Do Anything Arcade</title>
+  <style>
+    body { margin:0; background:#111; color:#eee; font-family:sans-serif; }
+    header { padding:10px; background:#222; display:flex; gap:10px; align-items:center; }
+    h1 { margin:0; font-size:18px; }
+    canvas { background:#000; display:block; margin:10px auto; border:2px solid #333; }
+    .panel { background:#222; margin:10px; padding:10px; border-radius:8px; }
+    .btn { background:#4fd1c5; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .kbd { background:#333; padding:2px 6px; border-radius:4px; font-family:monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Do Anything Arcade</h1>
+    <button onclick="loadGame('dodge')" class="btn">Dodge</button>
+    <button onclick="loadGame('snake')" class="btn">Snake</button>
+    <button onclick="loadGame('clicker')" class="btn">Clicker</button>
+    <button onclick="loadGame('pong')" class="btn">Pong</button>
+    <button onclick="loadGame('flappy')" class="btn">Flappy</button>
+    <button onclick="loadGame('breakout')" class="btn">Breakout</button>
+    <button onclick="loadGame('invaders')" class="btn">Invaders</button>
+  </header>
+
+  <canvas id="game" width="640" height="360"></canvas>
+
+  <div class="panel">
+    <h3>Cheat Keys</h3>
+    <ul>
+      <li><span class="kbd">G</span> – God Mode</li>
+      <li><span class="kbd">S</span> – Slow Motion</li>
+      <li><span class="kbd">D</span> – Double Score</li>
+      <li><span class="kbd">A</span> – Auto Play</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h3>Sponsored</h3>
+    <div id="adBox"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Reward Ad</h3>
+    <button id="watchAdBtn" class="btn">Watch Ad</button>
+  </div>
+
+  <script>
+    const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+    let gameName="dodge",score=0,best={dodge:0,snake:0,clicker:0,pong:0,flappy:0,breakout:0,invaders:0};
+    let paused=false,keys=new Set();
+
+    // Cheats
+    const Cheats={godMode:false,slowMotion:false,doubleScore:false,autoPlay:false};
+    document.addEventListener("keydown",e=>{
+      keys.add(e.key);
+      if(e.key==="g") Cheats.godMode=!Cheats.godMode;
+      if(e.key==="s") Cheats.slowMotion=!Cheats.slowMotion;
+      if(e.key==="d") Cheats.doubleScore=!Cheats.doubleScore;
+      if(e.key==="a") Cheats.autoPlay=!Cheats.autoPlay;
+    });
+    document.addEventListener("keyup",e=>keys.delete(e.key));
+
+    // Save/Load
+    const SAVE_KEY="arcade_save";
+    function saveGame(){localStorage.setItem(SAVE_KEY,JSON.stringify(best));}
+    function loadGame(){const raw=localStorage.getItem(SAVE_KEY);if(raw)Object.assign(best,JSON.parse(raw));}
+    loadGame();
+
+    // Ads
+    const ads=[{text:"Upgrade to Pro Pack!",link:"#pro"},{text:"Visit our store!",link:"https://example.com"}];
+    function showAd(){const ad=ads[Math.floor(Math.random()*ads.length)];
+      document.getElementById("adBox").innerHTML=`<a href="${ad.link}" target="_blank" style="color:#ffd166;">${ad.text}</a>`;}
+    setInterval(showAd,15000);showAd();
+
+    // Reward Ad
+    document.getElementById("watchAdBtn").onclick=()=>{
+      ctx.fillStyle="#fff";ctx.fillText("Ad playing...",10,20);
+      setTimeout(()=>{score+=50;ctx.fillText("Reward unlocked! +50",10,40);},5000);
+    };
+
+    // Mods generator
+    function generateModID(){
+      const themes=["Neon","Retro","Solar","Aurora"],accents=["#ff0","#0ff","#f0f","#0f0"],
+      rules=["SpeedSurge","MirrorControls","TinyPlayer"],intensities=[1,2,3,4,5],games=["dodge","snake","clicker"];
+      return `mod:${games[Math.random()*games.length|0]}:${themes[Math.random()*themes.length|0]}:${accents[Math.random()*accents.length|0]}:${rules[Math.random()*rules.length|0]}:${intensities[Math.random()*intensities.length|0]}`;
+    }
+
+    // Example game modules (simplified)
+    function startDodge(){dodge={player:{x:300,y:320,w:40,h:40,speed:6},blocks:[]};}
+    function updateDodge(dt){const p=dodge.player;
+      if(keys.has("ArrowLeft")||keys.has("a"))p.x-=p.speed;
+      if(keys.has("ArrowRight")||keys.has("d"))p.x+=p.speed;
+      if(Math.random()<0.02)dodge.blocks.push({x:Math.random()*600,y:0,w:40,h:40});
+      dodge.blocks.forEach(b=>b.y+=3);
+      dodge.blocks=dodge.blocks.filter(b=>b.y<360);
+      if(!Cheats.godMode)for(const b of dodge.blocks){if(p.x<b.x+b.w&&p.x+p.w>b.x&&p.y<b.y+b.h&&p.y+p.h>b.y){gameOver();}}
+      score+=0.1;
+    }
+    function drawDodge(){ctx.fillStyle="#4fd1c5";ctx.fillRect(dodge.player.x,dodge.player.y,dodge.player.w,dodge.player.h);
+      ctx.fillStyle="#ff5a5a";dodge.blocks.forEach(b=>ctx.fillRect(b.x,b.y,b.w,b.h));}
+
+    // Placeholder for other games (snake, clicker, pong, flappy, breakout, invaders)
+    function startSnake(){snake={};}function updateSnake(dt){score+=0.05;}function drawSnake(){ctx.fillStyle="#8bd450";ctx.fillRect(300,150,20,20);}
+    function startClicker(){clicker={};}function updateClicker(dt){score+=0.05;}function drawClicker(){ctx.fillStyle="#ffd166";ctx.fillRect(320,180,30,30);}
+    function startPong(){pong={};}function updatePong(dt){score+=0.05;}function drawPong(){ctx.fillStyle="#fff";ctx.fillRect(300,150,20,60);}
+    function startFlappy(){flappy={};}function updateFlappy(dt){score+=0.05;}function drawFlappy(){ctx.fillStyle="#4fd1c5";ctx.fillRect(120,160,20,20);}
+    function startBreakout(){breakout={};}function updateBreakout(dt){score+=0.05;}function drawBreakout(){ctx.fillStyle="#ff5a5a";ctx.fillRect(200,100,60,20);}
+    function startInvaders(){invaders={};}function updateInvaders(dt){score+=0.05;}function drawInvaders(){ctx.fillStyle="#ffd166";ctx.fillRect(250,50,30,20);}
+
+    // Registry
+    const Games={dodge:{init:startDodge,update:updateDodge,draw:drawDodge},
+      snake:{init:startSnake,update:updateSnake,draw:drawSnake},
+      clicker:{init:startClicker,update:updateClicker,draw:drawClicker},
+      pong:{init:startPong,update:updatePong,draw:drawPong},
+      flappy:{init:startFlappy,update:updateFlappy,draw:drawFlappy},
+      breakout:{init:startBreakout,update:updateBreakout,draw:drawBreakout},
+      invaders:{init:startInvaders,update:updateInvaders,draw:drawInvaders}};
+
+    function loadGame(id){gameName=id;score=0;Games[id].init();}
+
+    function gameOver(){paused=true;best[gameName]=Math.max(best[gameName],Math.floor(score));saveGame();}
+
+    // Main loop
+    let last=performance.now();
+    function loop(ts){const dt=(ts-last);last=ts;
+      if(!paused){
+        ctx.clearRect(0,0,640,360);
+        Games[gameName].update(dt);
